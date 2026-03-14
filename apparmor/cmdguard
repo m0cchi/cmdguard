@@ -1,171 +1,85 @@
+#include <tunables/global>
+
 # AppArmor profile for cmdguard
 #
-# Deploy to: /etc/apparmor.d/cmdguard  (on each K8s node)
-# Load with: apparmor_parser -r /etc/apparmor.d/cmdguard
+# Deploy: /etc/apparmor.d/cmdguard
+# Load:   apparmor_parser -r /etc/apparmor.d/cmdguard
 #
-# Two profiles are defined:
-#
-#   cmdguard          — the guard binary itself
-#   cmdguard-confined — child processes launched by "cmdguard exec"
-#                           (e.g. the claude-code process)
-#
-# How it works:
-#   1. User runs: cmdguard exec claude
-#   2. cmdguard sets up tmpdir with symlinks, then exec's claude
-#      → claude transitions to "cmdguard-confined" profile
-#   3. Inside claude, any sub-command (e.g. git) resolves to
-#      /tmp/cmdguard-XXXX/bin/git (symlink → guard binary)
-#      AppArmor resolves the symlink target and transitions back
-#      to "cmdguard" profile for validation
-#   4. After policy check, cmdguard exec's the real binary (Ux)
-#
-# Kubernetes usage:
-#   Pod annotation:
-#     container.apparmor.security.beta.kubernetes.io/<container>: localhost/cmdguard-confined
-#   (the "localhost/" prefix means the profile is loaded on the node)
+# Kubernetes:
+#   container.apparmor.security.beta.kubernetes.io/<container>: localhost/cmdguard-confined
 
 # ============================================================
-# cmdguard binary profile
+# cmdguard — the guard binary itself
 # ============================================================
 profile cmdguard /opt/cmdguard/cmdguard flags=(attach_disconnected) {
   include <abstractions/base>
-  include <abstractions/nameservice>
 
-  # --- Self ---
-  /proc/self/exe r,
-  /proc/self/fd/  r,
-  /proc/self/maps r,
-  /proc/@{pid}/exe r,
+  # Install dir (binary + policy file)
+  /opt/cmdguard/**  r,
 
-  # --- Policy files ---
-  /opt/cmdguard/cmdguard.yaml r,
-  /tmp/cmdguard-*/bin/cmdguard.yaml r,
+  # Tmpdir: symlinks, binary copy, policy copy, origbin copies
+  /tmp/              rw,
+  /tmp/cmdguard-*/** rwlk,
 
-  # --- Install dir ---
-  /opt/cmdguard/ r,
-  /opt/cmdguard/** r,
+  # Read system binaries (for copying to origbin in namespace mode)
+  /usr/**  r,
+  /bin/*   r,
+  /sbin/*  r,
 
-  # --- Tmpdir management (exec mode) ---
-  # MkdirTemp, Mkdir, Symlink, WriteFile, RemoveAll
-  /tmp/ rw,
-  /tmp/cmdguard-*/            rw,
-  /tmp/cmdguard-*/bin/        rw,
-  /tmp/cmdguard-*/bin/**      rwlk,
-  /tmp/cmdguard-*/origbin/    rw,
-  /tmp/cmdguard-*/origbin/**  rwx,
-  /tmp/cmdguard-*/.exec-target rwx,
-  /tmp/cmdguard-*/bin/.cmdguard-bin rwx,
+  # Execute validated commands unconfined (policy already checked)
+  /usr/bin/*                    Ux,
+  /usr/local/bin/*              Ux,
+  /bin/*                        Ux,
+  /usr/sbin/*                   Ux,
+  /sbin/*                       Ux,
+  /tmp/cmdguard-*/origbin/*     Ux,
 
-  # --- Copy real binaries into origbin (exec --namespace) ---
-  /usr/bin/*         r,
-  /usr/local/bin/*   r,
-  /bin/*             r,
-  /usr/sbin/*        r,
-  /sbin/*            r,
+  # Launch confined process via .exec-target (namespace mode)
+  /tmp/cmdguard-*/.exec-target  Px -> cmdguard-confined,
 
-  # --- mount namespace (exec --namespace, needs CAP_SYS_ADMIN) ---
-  capability sys_admin,
-  mount options=(rw, bind, ro) /tmp/cmdguard-*/bin/ -> /usr/bin/,
-  mount options=(rw, bind, ro) /tmp/cmdguard-*/bin/ -> /usr/local/bin/,
-  mount options=(rw, bind, ro) /tmp/cmdguard-*/bin/ -> /bin/,
-  mount options=(rw, bind, ro) /tmp/cmdguard-*/bin/ -> /usr/sbin/,
-  mount options=(rw, bind, ro) /tmp/cmdguard-*/bin/ -> /sbin/,
-  mount options=(rw, bind, ro) /tmp/cmdguard-*/bin/ -> /usr/local/sbin/,
-  mount options=(rw, private) -> /,
-
-  # --- Execute real binaries AFTER policy validation ---
-  # Ux: run unconfined (policy has already been checked by cmdguard)
-  /usr/bin/*             Ux,
-  /usr/local/bin/*       Ux,
-  /bin/*                 Ux,
-  /usr/sbin/*            Ux,
-  /sbin/*                Ux,
-  /tmp/cmdguard-*/origbin/* Ux,
-  /tmp/cmdguard-*/.exec-target Px -> cmdguard-confined,
-
-  # --- Launch target process under confined profile ---
-  # Add more target binaries as needed.
-  /usr/local/bin/claude  Px -> cmdguard-confined,
-  /usr/bin/bash          Px -> cmdguard-confined,
-  /bin/bash              Px -> cmdguard-confined,
-  /usr/bin/sh            Px -> cmdguard-confined,
-  /bin/sh                Px -> cmdguard-confined,
-  /usr/bin/zsh           Px -> cmdguard-confined,
-  /usr/bin/fish          Px -> cmdguard-confined,
-  /usr/bin/node          Px -> cmdguard-confined,
-
-  # --- General read access ---
-  /etc/passwd  r,
-  /etc/group   r,
-  /etc/hosts   r,
-  /etc/resolv.conf r,
-  /etc/nsswitch.conf r,
-  /etc/ld.so.cache r,
-  /etc/ld.so.conf  r,
-  /etc/ld.so.conf.d/** r,
-  /dev/null  rw,
   /dev/tty   rw,
   /dev/pts/* rw,
+
+  # Namespace mode (--namespace flag)
+  capability sys_admin,
+  mount options=(ro, bind) /tmp/cmdguard-*/bin/ -> /usr/bin/,
+  mount options=(ro, bind) /tmp/cmdguard-*/bin/ -> /usr/local/bin/,
+  mount options=(ro, bind) /tmp/cmdguard-*/bin/ -> /bin/,
+  mount options=(ro, bind) /tmp/cmdguard-*/bin/ -> /usr/sbin/,
+  mount options=(ro, bind) /tmp/cmdguard-*/bin/ -> /sbin/,
+  mount options=(ro, bind) /tmp/cmdguard-*/bin/ -> /usr/local/sbin/,
+  mount options=(rw, private) -> /,
 
   signal send set=(term kill),
   signal receive,
 }
 
 # ============================================================
-# cmdguard-confined profile
-# Applied to processes launched by "cmdguard exec"
-# (e.g. claude-code itself)
+# cmdguard-confined — child process launched by "cmdguard exec"
 # ============================================================
 profile cmdguard-confined flags=(attach_disconnected) {
   include <abstractions/base>
   include <abstractions/nameservice>
 
-  # --- Standard I/O ---
-  /dev/null   rw,
   /dev/tty    rw,
   /dev/pts/*  rw,
-  /dev/urandom r,
 
-  # --- Proc / sys ---
-  /proc/                          r,
-  /proc/self/                     r,
-  /proc/self/**                   r,
-  /proc/@{pid}/                   r,
-  /proc/@{pid}/**                 r,
+  /proc/self/**  r,
   /sys/kernel/mm/transparent_hugepage/** r,
 
-  # --- File read access (source code, configs, etc.) ---
-  /etc/**       r,
-  /usr/share/** r,
-  /opt/**       r,
+  /etc/**          r,
+  /usr/share/**    r,
+  /opt/cmdguard/** r,
 
-  # --- Home directory (workspace) ---
   @{HOME}/**  rwk,
   /tmp/**     rw,
 
-  # --- Network access ---
   network,
 
-  # --- Signals ---
   signal receive,
   signal send,
 
-  # === EXECUTION RULES ===
-  # ONLY allow execution through cmdguard.
-  #
-  # AppArmor resolves symlinks before matching exec rules, so:
-  #   /tmp/cmdguard-*/bin/git  (symlink)
-  #     → /opt/cmdguard/cmdguard (non-namespace mode)
-  #     → /tmp/cmdguard-*/bin/.cmdguard-bin (namespace mode copy)
-  #
-  # Both resolve targets are covered below.
-
-  # Non-namespace mode: symlinks point directly to the installed binary
-  /opt/cmdguard/cmdguard                  Px -> cmdguard,
-
-  # Namespace mode: symlinks point to a copy inside tmpdir
-  /tmp/cmdguard-*/bin/.cmdguard-bin       Px -> cmdguard,
-
-  # Deny everything else with exec permission
-  deny /** x,
+  # Execute ONLY through cmdguard (AppArmor resolves symlinks before matching)
+  /opt/cmdguard/cmdguard            Px -> cmdguard,
+  /tmp/cmdguard-*/bin/.cmdguard-bin Px -> cmdguard,
 }
