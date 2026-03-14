@@ -40,15 +40,18 @@ type Policy struct {
 }
 
 type CommandPolicy struct {
-	GlobalOptions []string                    `yaml:"global_options"`
-	Subcommands   map[string]SubcommandPolicy `yaml:"subcommands"`
-	AllowBare     bool                        `yaml:"allow_bare"`
-	BareOptions   []string                    `yaml:"bare_options"`
+	GlobalOptions      []string                    `yaml:"global_options"`
+	GlobalValueOptions []string                    `yaml:"global_value_options"`
+	Subcommands        map[string]SubcommandPolicy `yaml:"subcommands"`
+	AllowBare          bool                        `yaml:"allow_bare"`
+	BareOptions        []string                    `yaml:"bare_options"`
+	BareValueOptions   []string                    `yaml:"bare_value_options"`
 }
 
 type SubcommandPolicy struct {
 	Allow        bool     `yaml:"allow"`
 	Options      []string `yaml:"options"`
+	ValueOptions []string `yaml:"value_options"`
 	AllowAnyArgs bool     `yaml:"allow_any_args"`
 }
 
@@ -196,7 +199,7 @@ doneOpts:
 	}
 
 	if useNamespace {
-		execWithNamespace(realTarget, targetCmd, targetArgs, binDir, currentPath, guardBin, policy)
+		execWithNamespace(realTarget, targetCmd, targetArgs, binDir, currentPath, policy)
 		// does not return
 	}
 
@@ -235,10 +238,19 @@ func createGuardedBinDir(policy *Policy, guardBin string, policyPath string) (st
 		return "", "", fmt.Errorf("failed to create bin dir: %v", err)
 	}
 
-	// Symlink each policy command → guard binary
+	// Copy guard binary into binDir so that EvalSymlinks(binDir/cmd) resolves
+	// to binDir/.cmdguard-bin, allowing loadPolicy to find cmdguard.yaml in binDir.
+	guardCopy := filepath.Join(binDir, ".cmdguard-bin")
+	if err := copyFile(guardBin, guardCopy); err != nil {
+		os.RemoveAll(tmpDir)
+		return "", "", fmt.Errorf("failed to copy guard binary: %v", err)
+	}
+	os.Chmod(guardCopy, 0755)
+
+	// Symlink each policy command → local guard copy
 	for cmdName := range policy.Commands {
 		linkPath := filepath.Join(binDir, cmdName)
-		if err := os.Symlink(guardBin, linkPath); err != nil {
+		if err := os.Symlink(guardCopy, linkPath); err != nil {
 			fmt.Fprintf(os.Stderr, "[cmdguard] warning: symlink %s: %v\n", cmdName, err)
 		}
 	}
@@ -264,7 +276,7 @@ func createGuardedBinDir(policy *Policy, guardBin string, policyPath string) (st
 //
 // The target binary is copied into the tmpdir BEFORE bind-mounting, so it
 // remains accessible after the original PATH dirs are masked.
-func execWithNamespace(realTarget string, targetCmd string, targetArgs []string, binDir string, origPath string, guardBin string, policy *Policy) {
+func execWithNamespace(realTarget string, targetCmd string, targetArgs []string, binDir string, origPath string, policy *Policy) {
 	tmpDir := filepath.Dir(binDir)
 
 	// --- 1. Create origbin/ with copies of real binaries ---
@@ -305,21 +317,7 @@ func execWithNamespace(realTarget string, targetCmd string, targetArgs []string,
 	}
 	os.Chmod(targetCopy, 0755)
 
-	// --- 3. Copy guard binary into binDir ---
-	guardCopy := filepath.Join(binDir, ".cmdguard-bin")
-	if err := copyFile(guardBin, guardCopy); err != nil {
-		fatal("failed to copy guard binary: %v", err)
-	}
-	os.Chmod(guardCopy, 0755)
-
-	// Re-point symlinks to the local guard copy
-	for cmdName := range policy.Commands {
-		linkPath := filepath.Join(binDir, cmdName)
-		os.Remove(linkPath)
-		os.Symlink(guardCopy, linkPath)
-	}
-
-	// --- 4. Create mount namespace ---
+	// --- 3. Create mount namespace ---
 	if err := syscall.Unshare(syscall.CLONE_NEWNS); err != nil {
 		fatal("unshare(CLONE_NEWNS) failed: %v\n  Need root or CAP_SYS_ADMIN. Try without --namespace.", err)
 	}
@@ -558,6 +556,7 @@ func validateArgs(cmdName string, policy CommandPolicy, args []string) error {
 	}
 
 	globalOpts := buildOptionSet(policy.GlobalOptions)
+	globalValueOpts := buildOptionSet(policy.GlobalValueOptions)
 	idx := 0
 
 	knownSubcmds := make(map[string]bool, len(policy.Subcommands))
@@ -583,7 +582,7 @@ func validateArgs(cmdName string, policy CommandPolicy, args []string) error {
 			return fmt.Errorf("%s: global option %q is not allowed", cmdName, arg)
 		}
 		idx++
-		if !strings.Contains(arg, "=") && idx < len(args) && !strings.HasPrefix(args[idx], "-") {
+		if !strings.Contains(arg, "=") && idx < len(args) && !strings.HasPrefix(args[idx], "-") && globalValueOpts[arg] {
 			if !knownSubcmds[args[idx]] {
 				idx++
 			}
@@ -614,6 +613,7 @@ func validateArgs(cmdName string, policy CommandPolicy, args []string) error {
 	subArgs := args[idx+1:]
 	subOpts := buildOptionSet(subPolicy.Options)
 	mergedOpts := mergeOptionSets(globalOpts, subOpts)
+	valueOpts := mergeOptionSets(globalValueOpts, buildOptionSet(subPolicy.ValueOptions))
 
 	for i := 0; i < len(subArgs); i++ {
 		arg := subArgs[i]
@@ -627,7 +627,7 @@ func validateArgs(cmdName string, policy CommandPolicy, args []string) error {
 			if !isAllowedOption(arg, mergedOpts) {
 				return fmt.Errorf("%s %s: option %q is not allowed", cmdName, subCmd, arg)
 			}
-			if !strings.Contains(arg, "=") && i+1 < len(subArgs) && !strings.HasPrefix(subArgs[i+1], "-") {
+			if !strings.Contains(arg, "=") && i+1 < len(subArgs) && !strings.HasPrefix(subArgs[i+1], "-") && valueOpts[arg] {
 				i++
 			}
 		} else {
@@ -643,6 +643,7 @@ func validateArgs(cmdName string, policy CommandPolicy, args []string) error {
 func validateBareArgs(cmdName string, policy CommandPolicy, args []string, globalOpts map[string]bool) error {
 	bareOpts := buildOptionSet(policy.BareOptions)
 	merged := mergeOptionSets(globalOpts, bareOpts)
+	valueOpts := mergeOptionSets(buildOptionSet(policy.GlobalValueOptions), buildOptionSet(policy.BareValueOptions))
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
@@ -652,7 +653,7 @@ func validateBareArgs(cmdName string, policy CommandPolicy, args []string, globa
 			if !isAllowedOption(arg, merged) {
 				return fmt.Errorf("%s: option %q is not allowed", cmdName, arg)
 			}
-			if !strings.Contains(arg, "=") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			if !strings.Contains(arg, "=") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") && valueOpts[arg] {
 				i++
 			}
 		}

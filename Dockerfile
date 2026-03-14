@@ -11,8 +11,8 @@
 FROM golang:1.22-bookworm AS builder
 
 WORKDIR /build
-COPY go.mod ./
-COPY vendor_yaml/ ./vendor_yaml/
+COPY go.mod go.sum ./
+RUN go mod download
 COPY main.go ./
 
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o cmdguard .

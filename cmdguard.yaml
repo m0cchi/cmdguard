@@ -24,6 +24,9 @@ commands:
       - "--no-pager"
       - "-C"
       - "-c"
+    global_value_options:
+      - "-C"
+      - "-c"
     allow_bare: false
     subcommands:
       status:
@@ -60,6 +63,13 @@ commands:
           - "--until"
           - "--stat"
           - "--no-pager"
+        value_options:
+          - "-n"
+          - "--pretty"
+          - "--format"
+          - "--author"
+          - "--since"
+          - "--until"
         allow_any_args: true
       show:
         allow: true
@@ -89,6 +99,9 @@ commands:
           - "--amend"
           - "--no-edit"
           - "--allow-empty"
+        value_options:
+          - "-m"
+          - "--message"
         allow_any_args: false
       branch:
         allow: true
@@ -152,6 +165,8 @@ commands:
           - "--continue"
           - "--skip"
           - "--onto"
+        value_options:
+          - "--onto"
         allow_any_args: true
       merge:
         allow: true
@@ -169,6 +184,9 @@ commands:
           - "--branch"
           - "--single-branch"
           - "--recurse-submodules"
+        value_options:
+          - "--depth"
+          - "--branch"
         allow_any_args: true
       # Deny destructive commands
       clean:
@@ -178,7 +196,6 @@ commands:
         options:
           - "--soft"
           - "--mixed"
-          - "--hard"
         allow_any_args: true
 
   # --- docker ---
@@ -214,6 +231,9 @@ commands:
           - "--since"
           - "-t"
           - "--timestamps"
+        value_options:
+          - "--tail"
+          - "--since"
         allow_any_args: true
       build:
         allow: true
@@ -223,6 +243,13 @@ commands:
           - "-f"
           - "--file"
           - "--no-cache"
+          - "--build-arg"
+          - "--target"
+        value_options:
+          - "-t"
+          - "--tag"
+          - "-f"
+          - "--file"
           - "--build-arg"
           - "--target"
         allow_any_args: true
@@ -243,10 +270,22 @@ commands:
           - "-e"
           - "--env"
           - "--network"
+        value_options:
+          - "--name"
+          - "-p"
+          - "--publish"
+          - "-v"
+          - "--volume"
+          - "-e"
+          - "--env"
+          - "--network"
         allow_any_args: true
       stop:
         allow: true
         options:
+          - "-t"
+          - "--time"
+        value_options:
           - "-t"
           - "--time"
         allow_any_args: true
@@ -284,6 +323,20 @@ commands:
       - "--insecure"
       - "-v"
       - "--verbose"
+      - "-w"
+      - "--write-out"
+      - "--max-time"
+      - "--connect-timeout"
+    bare_value_options:
+      - "-o"
+      - "--output"
+      - "-H"
+      - "--header"
+      - "-X"
+      - "--request"
+      - "-d"
+      - "--data"
+      - "--data-raw"
       - "-w"
       - "--write-out"
       - "--max-time"

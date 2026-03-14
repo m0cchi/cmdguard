@@ -215,7 +215,9 @@ exec モードで作成される tmpdir:
 ## 方法 D: AppArmor（Level 4、K8s 向け）
 
 AppArmor を使うとカーネルレベルで exec を制限できます。
-Level 2（mount namespace）と組み合わせると、コンテナ外でも cmdguard 経由以外の実行を OS が強制します。
+Level 2（mount namespace）と組み合わせると、コンテナ外でも **子プロセスから cmdguard への初回呼び出し** を OS が強制します。
+ただし cmdguard がポリシー検証後にバイナリを実行する際は `Ux`（unconfined）で起動するため、
+その後のサブプロセス（git フックなど）は AppArmor の制約を受けません。
 
 ### プロファイル構成
 
@@ -248,7 +250,7 @@ cmdguard exec claude
   本物の /usr/bin/git
 ```
 
-`deny /** x` により、cmdguard 以外のバイナリへの exec はカーネルレベルで拒否されます。
+`deny /** x` により、cmdguard-confined プロファイル下の子プロセスから cmdguard を経由しない exec はカーネルレベルで拒否されます。
 
 ### K8s ノードへのデプロイ
 

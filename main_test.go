@@ -6,8 +6,9 @@ import (
 
 func testPolicy() CommandPolicy {
 	return CommandPolicy{
-		GlobalOptions: []string{"--no-pager", "-C", "-c"},
-		AllowBare:     false,
+		GlobalOptions:      []string{"--no-pager", "-C", "-c"},
+		GlobalValueOptions: []string{"-C", "-c"},
+		AllowBare:          false,
 		Subcommands: map[string]SubcommandPolicy{
 			"status": {
 				Allow:        true,
@@ -17,6 +18,7 @@ func testPolicy() CommandPolicy {
 			"commit": {
 				Allow:        true,
 				Options:      []string{"-m", "--message", "-a", "--amend"},
+				ValueOptions: []string{"-m", "--message"},
 				AllowAnyArgs: false,
 			},
 			"clean": {
@@ -25,6 +27,7 @@ func testPolicy() CommandPolicy {
 			"log": {
 				Allow:        true,
 				Options:      []string{"--oneline", "--graph", "-n", "--format"},
+				ValueOptions: []string{"-n", "--format"},
 				AllowAnyArgs: true,
 			},
 		},
@@ -124,6 +127,24 @@ func TestCommitDenyPositionalArg(t *testing.T) {
 	err := validateArgs("git", p, []string{"commit", "somefile.txt"})
 	if err == nil {
 		t.Error("expected denied for positional arg when allow_any_args=false")
+	}
+}
+
+func TestCommitBooleanFlagThenPositionalArgDenied(t *testing.T) {
+	p := testPolicy()
+	// --amend is boolean (not in value_options); HEAD~1 must NOT be consumed as its value
+	err := validateArgs("git", p, []string{"commit", "--amend", "HEAD~1"})
+	if err == nil {
+		t.Error("expected denied: positional arg after boolean flag should not bypass allow_any_args=false")
+	}
+}
+
+func TestCommitAFlagThenPositionalArgDenied(t *testing.T) {
+	p := testPolicy()
+	// -a is boolean; somefile.txt must not be consumed as its value
+	err := validateArgs("git", p, []string{"commit", "-a", "somefile.txt"})
+	if err == nil {
+		t.Error("expected denied: positional arg after boolean -a flag should not bypass allow_any_args=false")
 	}
 }
 
