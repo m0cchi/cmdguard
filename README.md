@@ -71,6 +71,7 @@ claude-guard exec --namespace bash
 | Level 1 | `exec` (PATHのみ) | `git`, `ls` 等のコマンド名での実行 |
 | Level 2 | `exec --namespace` | `/usr/bin/git` 等の絶対パス指定も防御 |
 | Level 3 | Docker + namespace | ファイルシステム全体を隔離 |
+| Level 4 | AppArmor + exec | カーネルレベルで exec を強制（K8s対応） |
 
 ## YAML ポリシー
 
@@ -210,6 +211,110 @@ exec モードで作成される tmpdir:
 │   └── ...
 └── .exec-target                 ← ターゲットコマンドのコピー
 ```
+
+## 方法 D: AppArmor（Level 4、K8s 向け）
+
+AppArmor を使うとカーネルレベルで exec を制限できます。
+Level 2（mount namespace）と組み合わせると、コンテナ外でも claude-guard 経由以外の実行を OS が強制します。
+
+### プロファイル構成
+
+`apparmor/claude-guard` に2つのプロファイルが定義されています：
+
+| プロファイル | 適用対象 | 役割 |
+|---|---|---|
+| `claude-guard` | guard バイナリ自身 | tmpdir管理・ポリシー検証・本物バイナリ実行 |
+| `claude-guard-confined` | `claude-guard exec` で起動した子プロセス | claude-guard 経由以外の exec を deny |
+
+### exec 時の AppArmor 遷移
+
+```
+claude-guard exec claude
+        │
+        ▼ (Px -> claude-guard-confined)
+  claude プロセス  ← "claude-guard-confined" プロファイルで動作
+        │
+        │  git status と実行
+        ▼
+  /tmp/claude-guard-*/bin/git  (symlink)
+        │  AppArmor がシンボリックリンクを解決
+        ├─ 非namespaceモード → /opt/claude-guard/claude-guard
+        └─ namespaceモード   → /tmp/.../bin/.claude-guard-bin
+        │
+        ▼ (Px -> claude-guard)
+  claude-guard  ← ポリシー検証
+        │
+        ▼ (Ux: unconfined)
+  本物の /usr/bin/git
+```
+
+`deny /** x` により、claude-guard 以外のバイナリへの exec はカーネルレベルで拒否されます。
+
+### K8s ノードへのデプロイ
+
+```bash
+# 各ノードへコピー
+scp apparmor/claude-guard node:/etc/apparmor.d/claude-guard
+
+# ノード上でプロファイルをロード
+apparmor_parser -r /etc/apparmor.d/claude-guard
+
+# 確認
+aa-status | grep claude-guard
+```
+
+DaemonSet でノード全体に配布する場合の例：
+
+```yaml
+# apparmor-loader DaemonSet （抜粋）
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: apparmor-loader
+spec:
+  template:
+    spec:
+      initContainers:
+      - name: install
+        image: ubuntu
+        command:
+        - sh
+        - -c
+        - cp /profiles/claude-guard /etc/apparmor.d/ && apparmor_parser -r /etc/apparmor.d/claude-guard
+        volumeMounts:
+        - name: profiles
+          mountPath: /profiles
+        - name: apparmor
+          mountPath: /etc/apparmor.d
+      volumes:
+      - name: profiles
+        configMap:
+          name: claude-guard-apparmor
+      - name: apparmor
+        hostPath:
+          path: /etc/apparmor.d
+```
+
+### Pod への適用
+
+```yaml
+metadata:
+  annotations:
+    # コンテナ名に対して confined プロファイルを適用
+    container.apparmor.security.beta.kubernetes.io/claude: localhost/claude-guard-confined
+spec:
+  containers:
+  - name: claude
+    command: ["/opt/claude-guard/claude-guard", "exec", "claude"]
+```
+
+> **注意**: `localhost/` プレフィックスはノードにロード済みのプロファイルを指定します。
+
+### カスタマイズ
+
+- `Px -> claude-guard-confined` の対象バイナリ（`/usr/local/bin/claude` 等）はパスを環境に合わせて調整
+- `--namespace` モードを使わない場合は `mount` ルールを削除可能
+- `@{HOME}/**  rwk` のスコープはワークスペースのパスに合わせて絞ることを推奨
 
 ## セキュリティ上の注意
 
