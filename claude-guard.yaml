@@ -1,0 +1,318 @@
+# claude-guard.yaml
+# Policy definition for claude-guard command wrapper
+#
+# This file must be placed in the same directory as the claude-guard binary.
+# Symlinks like /opt/claude-guard/bin/git -> /opt/claude-guard/claude-guard
+# will read this file from /opt/claude-guard/claude-guard.yaml
+#
+# Structure:
+#   commands:
+#     <command-name>:
+#       global_options:    [options available for all subcommands]
+#       allow_bare:        true/false (allow running without subcommand)
+#       bare_options:      [options when running without subcommand]
+#       subcommands:
+#         <subcommand-name>:
+#           allow:         true/false
+#           options:       [allowed options for this subcommand]
+#           allow_any_args: true/false (allow positional arguments)
+
+commands:
+  # --- git ---
+  git:
+    global_options:
+      - "--no-pager"
+      - "-C"
+      - "-c"
+    allow_bare: false
+    subcommands:
+      status:
+        allow: true
+        options:
+          - "-s"
+          - "--short"
+          - "--branch"
+          - "--porcelain"
+        allow_any_args: true
+      diff:
+        allow: true
+        options:
+          - "--stat"
+          - "--cached"
+          - "--staged"
+          - "--name-only"
+          - "--name-status"
+          - "--no-color"
+          - "--color"
+        allow_any_args: true
+      log:
+        allow: true
+        options:
+          - "--oneline"
+          - "--graph"
+          - "--all"
+          - "--decorate"
+          - "-n"
+          - "--pretty"
+          - "--format"
+          - "--author"
+          - "--since"
+          - "--until"
+          - "--stat"
+          - "--no-pager"
+        allow_any_args: true
+      show:
+        allow: true
+        options:
+          - "--stat"
+          - "--name-only"
+          - "--format"
+          - "--no-patch"
+        allow_any_args: true
+      add:
+        allow: true
+        options:
+          - "-A"
+          - "--all"
+          - "-p"
+          - "--patch"
+          - "-n"
+          - "--dry-run"
+        allow_any_args: true
+      commit:
+        allow: true
+        options:
+          - "-m"
+          - "--message"
+          - "-a"
+          - "--all"
+          - "--amend"
+          - "--no-edit"
+          - "--allow-empty"
+        allow_any_args: false
+      branch:
+        allow: true
+        options:
+          - "-a"
+          - "--all"
+          - "-r"
+          - "-d"
+          - "-D"
+          - "--list"
+          - "-v"
+          - "--verbose"
+        allow_any_args: true
+      checkout:
+        allow: true
+        options:
+          - "-b"
+          - "-B"
+        allow_any_args: true
+      switch:
+        allow: true
+        options:
+          - "-c"
+          - "-C"
+        allow_any_args: true
+      pull:
+        allow: true
+        options:
+          - "--rebase"
+          - "--no-rebase"
+          - "--ff-only"
+        allow_any_args: true
+      push:
+        allow: true
+        options:
+          - "--force-with-lease"
+          - "-u"
+          - "--set-upstream"
+          - "--dry-run"
+        allow_any_args: true
+      fetch:
+        allow: true
+        options:
+          - "--all"
+          - "--prune"
+          - "--tags"
+        allow_any_args: true
+      stash:
+        allow: true
+        options:
+          - "--keep-index"
+          - "-u"
+          - "--include-untracked"
+        allow_any_args: true
+      rebase:
+        allow: true
+        options:
+          - "-i"
+          - "--interactive"
+          - "--abort"
+          - "--continue"
+          - "--skip"
+          - "--onto"
+        allow_any_args: true
+      merge:
+        allow: true
+        options:
+          - "--no-ff"
+          - "--ff-only"
+          - "--squash"
+          - "--abort"
+          - "--continue"
+        allow_any_args: true
+      clone:
+        allow: true
+        options:
+          - "--depth"
+          - "--branch"
+          - "--single-branch"
+          - "--recurse-submodules"
+        allow_any_args: true
+      # Deny destructive commands
+      clean:
+        allow: false
+      reset:
+        allow: true
+        options:
+          - "--soft"
+          - "--mixed"
+          - "--hard"
+        allow_any_args: true
+
+  # --- docker ---
+  docker:
+    global_options: []
+    allow_bare: false
+    subcommands:
+      ps:
+        allow: true
+        options:
+          - "-a"
+          - "--all"
+          - "-q"
+          - "--quiet"
+          - "--format"
+          - "--filter"
+        allow_any_args: false
+      images:
+        allow: true
+        options:
+          - "-a"
+          - "--all"
+          - "-q"
+          - "--quiet"
+          - "--format"
+        allow_any_args: false
+      logs:
+        allow: true
+        options:
+          - "-f"
+          - "--follow"
+          - "--tail"
+          - "--since"
+          - "-t"
+          - "--timestamps"
+        allow_any_args: true
+      build:
+        allow: true
+        options:
+          - "-t"
+          - "--tag"
+          - "-f"
+          - "--file"
+          - "--no-cache"
+          - "--build-arg"
+          - "--target"
+        allow_any_args: true
+      run:
+        allow: true
+        options:
+          - "-d"
+          - "--detach"
+          - "-it"
+          - "-i"
+          - "-t"
+          - "--rm"
+          - "--name"
+          - "-p"
+          - "--publish"
+          - "-v"
+          - "--volume"
+          - "-e"
+          - "--env"
+          - "--network"
+        allow_any_args: true
+      stop:
+        allow: true
+        options:
+          - "-t"
+          - "--time"
+        allow_any_args: true
+      # Deny dangerous operations
+      rm:
+        allow: false
+      system:
+        allow: false
+
+  # --- curl ---
+  curl:
+    global_options: []
+    allow_bare: true
+    bare_options:
+      - "-s"
+      - "--silent"
+      - "-S"
+      - "--show-error"
+      - "-L"
+      - "--location"
+      - "-o"
+      - "--output"
+      - "-O"
+      - "--remote-name"
+      - "-H"
+      - "--header"
+      - "-X"
+      - "--request"
+      - "-d"
+      - "--data"
+      - "--data-raw"
+      - "-f"
+      - "--fail"
+      - "-k"
+      - "--insecure"
+      - "-v"
+      - "--verbose"
+      - "-w"
+      - "--write-out"
+      - "--max-time"
+      - "--connect-timeout"
+    subcommands: {}
+
+  # --- ls ---
+  ls:
+    global_options: []
+    allow_bare: true
+    bare_options:
+      - "-l"
+      - "-a"
+      - "-la"
+      - "-al"
+      - "-lh"
+      - "-R"
+      - "--color"
+      - "-1"
+      - "-t"
+      - "-r"
+      - "-S"
+    subcommands: {}
+
+  # --- cat ---
+  cat:
+    global_options: []
+    allow_bare: true
+    bare_options:
+      - "-n"
+      - "--number"
+    subcommands: {}
