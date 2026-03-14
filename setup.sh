@@ -2,26 +2,26 @@
 set -euo pipefail
 
 # ============================================================
-# claude-guard setup script
+# cmdguard setup script
 #
 # This script:
-# 1. Compiles the claude-guard binary
-# 2. Creates the 'claude-guard' group
+# 1. Compiles the cmdguard binary
+# 2. Creates the 'cmdguard' group
 # 3. Sets up the binary with setgid
 # 4. Creates symlinks in a bin/ directory
 # 5. Optionally locks down original binaries
 #
 # Usage:
-#   sudo ./setup.sh [--install-dir /opt/claude-guard] [--lock-binaries]
+#   sudo ./setup.sh [--install-dir /opt/cmdguard] [--lock-binaries]
 #
 # After setup, configure Claude Code's environment:
-#   PATH=/opt/claude-guard/bin
+#   PATH=/opt/cmdguard/bin
 #   ORIGINAL_PATH=<original system PATH>
 # ============================================================
 
-INSTALL_DIR="/opt/claude-guard"
+INSTALL_DIR="/opt/cmdguard"
 LOCK_BINARIES=false
-GUARD_GROUP="claude-guard"
+GUARD_GROUP="cmdguard"
 CLAUDE_USER="${CLAUDE_USER:-claude}"
 
 usage() {
@@ -29,11 +29,11 @@ usage() {
 Usage: $0 [OPTIONS]
 
 Options:
-  --install-dir DIR    Installation directory (default: /opt/claude-guard)
+  --install-dir DIR    Installation directory (default: /opt/cmdguard)
   --lock-binaries      Remove 'other' execute permission from original binaries
-                       and add execute for the claude-guard group only
+                       and add execute for the cmdguard group only
   --claude-user USER   User that Claude Code runs as (default: claude)
-  --group NAME         Group name for setgid (default: claude-guard)
+  --group NAME         Group name for setgid (default: cmdguard)
   -h, --help           Show this help
 
 After installation:
@@ -59,7 +59,7 @@ done
 BIN_DIR="$INSTALL_DIR/bin"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "=== claude-guard setup ==="
+echo "=== cmdguard setup ==="
 echo "  Install dir:    $INSTALL_DIR"
 echo "  Bin dir:        $BIN_DIR"
 echo "  Group:          $GUARD_GROUP"
@@ -88,30 +88,30 @@ else
 fi
 
 # --- Build binary ---
-echo "[+] Building claude-guard binary..."
+echo "[+] Building cmdguard binary..."
 cd "$SCRIPT_DIR"
-CGO_ENABLED=0 go build -ldflags="-s -w" -o claude-guard .
-echo "    Built: claude-guard ($(stat -c%s claude-guard) bytes)"
+CGO_ENABLED=0 go build -ldflags="-s -w" -o cmdguard .
+echo "    Built: cmdguard ($(stat -c%s cmdguard) bytes)"
 
 # --- Install ---
 echo "[+] Installing to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR" "$BIN_DIR"
 
-cp claude-guard "$INSTALL_DIR/claude-guard"
-cp claude-guard.yaml "$INSTALL_DIR/claude-guard.yaml"
+cp cmdguard "$INSTALL_DIR/cmdguard"
+cp cmdguard.yaml "$INSTALL_DIR/cmdguard.yaml"
 
-# Binary: owned by root:claude-guard, setgid, no write for group/other
-chown root:"$GUARD_GROUP" "$INSTALL_DIR/claude-guard"
-chmod 2755 "$INSTALL_DIR/claude-guard"
+# Binary: owned by root:cmdguard, setgid, no write for group/other
+chown root:"$GUARD_GROUP" "$INSTALL_DIR/cmdguard"
+chmod 2755 "$INSTALL_DIR/cmdguard"
 
 # Policy: readable by root only (Claude cannot modify policy)
-chown root:root "$INSTALL_DIR/claude-guard.yaml"
-chmod 644 "$INSTALL_DIR/claude-guard.yaml"
+chown root:root "$INSTALL_DIR/cmdguard.yaml"
+chmod 644 "$INSTALL_DIR/cmdguard.yaml"
 
 # --- Create symlinks from policy ---
 echo "[+] Creating symlinks from policy..."
 # Extract command names from YAML (simple grep, works for our format)
-COMMANDS=$(grep -E '^\s{2}\w' "$INSTALL_DIR/claude-guard.yaml" | \
+COMMANDS=$(grep -E '^\s{2}\w' "$INSTALL_DIR/cmdguard.yaml" | \
            grep -v '^\s*#' | \
            grep -v 'commands:' | \
            grep -v 'global_options' | \
@@ -125,8 +125,8 @@ COMMANDS=$(grep -E '^\s{2}\w' "$INSTALL_DIR/claude-guard.yaml" | \
 for cmd in $COMMANDS; do
     # Verify the command actually exists on the system
     if command -v "$cmd" &>/dev/null; then
-        ln -sf "$INSTALL_DIR/claude-guard" "$BIN_DIR/$cmd"
-        echo "    $BIN_DIR/$cmd -> claude-guard"
+        ln -sf "$INSTALL_DIR/cmdguard" "$BIN_DIR/$cmd"
+        echo "    $BIN_DIR/$cmd -> cmdguard"
     else
         echo "    SKIP: $cmd (not found on system)"
     fi
@@ -147,9 +147,9 @@ if [[ "$LOCK_BINARIES" == "true" ]]; then
         REAL_PATH=$(readlink -f "$REAL_PATH")
 
         echo "    Locking: $REAL_PATH"
-        # Change group to claude-guard, keep owner
+        # Change group to cmdguard, keep owner
         chgrp "$GUARD_GROUP" "$REAL_PATH"
-        # Set permissions: owner rwx, group rx (claude-guard can execute), other r-- (no execute)
+        # Set permissions: owner rwx, group rx (cmdguard can execute), other r-- (no execute)
         chmod o-x "$REAL_PATH"
         chmod g+rx "$REAL_PATH"
     done
@@ -158,7 +158,7 @@ if [[ "$LOCK_BINARIES" == "true" ]]; then
     if id "$CLAUDE_USER" &>/dev/null; then
         echo ""
         echo "[+] Note: $CLAUDE_USER should NOT be in group $GUARD_GROUP"
-        echo "    The setgid bit on claude-guard grants group access at execution time."
+        echo "    The setgid bit on cmdguard grants group access at execution time."
         echo "    If $CLAUDE_USER were in the group, they could run binaries directly."
 
         if id -nG "$CLAUDE_USER" | grep -qw "$GUARD_GROUP"; then
@@ -182,13 +182,13 @@ echo "  ENV ORIGINAL_PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbi
 echo "  ENV PATH=$BIN_DIR"
 echo ""
 echo "To edit allowed commands/options:"
-echo "  sudo vi $INSTALL_DIR/claude-guard.yaml"
+echo "  sudo vi $INSTALL_DIR/cmdguard.yaml"
 echo ""
 
 if [[ "$LOCK_BINARIES" == "true" ]]; then
     echo "Binary lockdown is ACTIVE."
     echo "  - Original binaries: execute removed for 'other' users"
-    echo "  - claude-guard (setgid): can execute as group $GUARD_GROUP"
+    echo "  - cmdguard (setgid): can execute as group $GUARD_GROUP"
     echo "  - Claude user ($CLAUDE_USER) cannot directly execute locked binaries"
     echo ""
     echo "To verify: run 'ls -la \$(which git)' - should show no 'x' in other perms"

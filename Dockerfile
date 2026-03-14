@@ -1,9 +1,9 @@
 # ============================================================
-# claude-guard container example
+# cmdguard container example
 #
 # This Dockerfile demonstrates the "Level 3" isolation:
 # - Original binaries have execute removed for 'other'
-# - claude-guard binary has setgid for the 'cmdexec' group
+# - cmdguard binary has setgid for the 'cmdexec' group
 # - Claude Code user cannot execute binaries directly
 # - PATH only contains the guard's bin/ directory
 # ============================================================
@@ -15,7 +15,7 @@ COPY go.mod ./
 COPY vendor_yaml/ ./vendor_yaml/
 COPY main.go ./
 
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o claude-guard .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o cmdguard .
 
 # --- Runtime ---
 FROM debian:bookworm-slim
@@ -26,21 +26,21 @@ RUN groupadd cmdexec && \
     # DO NOT add claude to cmdexec group - the setgid bit handles this
 
     # Install the guard
-    mkdir -p /opt/claude-guard/bin
+    mkdir -p /opt/cmdguard/bin
 
-COPY --from=builder /build/claude-guard /opt/claude-guard/claude-guard
-COPY claude-guard.yaml /opt/claude-guard/claude-guard.yaml
+COPY --from=builder /build/cmdguard /opt/cmdguard/cmdguard
+COPY cmdguard.yaml /opt/cmdguard/cmdguard.yaml
 
 # Set permissions on the guard binary
-RUN chown root:cmdexec /opt/claude-guard/claude-guard && \
-    chmod 2755 /opt/claude-guard/claude-guard && \
-    chown root:root /opt/claude-guard/claude-guard.yaml && \
-    chmod 644 /opt/claude-guard/claude-guard.yaml
+RUN chown root:cmdexec /opt/cmdguard/cmdguard && \
+    chmod 2755 /opt/cmdguard/cmdguard && \
+    chown root:root /opt/cmdguard/cmdguard.yaml && \
+    chmod 644 /opt/cmdguard/cmdguard.yaml
 
 # Create symlinks for all commands defined in policy
 RUN for cmd in git docker curl ls cat; do \
         if command -v "$cmd" >/dev/null 2>&1; then \
-            ln -sf /opt/claude-guard/claude-guard /opt/claude-guard/bin/$cmd; \
+            ln -sf /opt/cmdguard/cmdguard /opt/cmdguard/bin/$cmd; \
         fi; \
     done
 
@@ -57,7 +57,7 @@ RUN for cmd in git docker curl ls cat; do \
 
 # Environment for Claude Code
 ENV ORIGINAL_PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ENV PATH=/opt/claude-guard/bin
+ENV PATH=/opt/cmdguard/bin
 
 USER claude
 WORKDIR /home/claude

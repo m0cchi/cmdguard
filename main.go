@@ -21,7 +21,7 @@ import (
 //    Validates args against policy, then exec's the real binary.
 //
 // 2. Exec mode:
-//    claude-guard exec [options] <command> [args...]
+//    cmdguard exec [options] <command> [args...]
 //    Sets up a guarded environment and launches the command.
 //    - Creates tmpdir with symlinks for allowed commands only
 //    - Sets PATH=tmpdir, ORIGINAL_PATH=original PATH
@@ -29,7 +29,7 @@ import (
 // ============================================================
 
 const (
-	policyFileName  = "claude-guard.yaml"
+	policyFileName  = "cmdguard.yaml"
 	envOriginalPath = "ORIGINAL_PATH"
 )
 
@@ -56,7 +56,7 @@ func main() {
 	invokedPath := os.Args[0]
 	cmdName := filepath.Base(invokedPath)
 
-	if cmdName == "claude-guard" {
+	if cmdName == "cmdguard" {
 		runGuardCommand()
 		return
 	}
@@ -83,23 +83,23 @@ func runGuardCommand() {
 	case "help", "--help", "-h":
 		printUsage()
 	default:
-		fmt.Fprintf(os.Stderr, "[claude-guard] unknown subcommand: %s\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "[cmdguard] unknown subcommand: %s\n", os.Args[1])
 		printUsage()
 		os.Exit(1)
 	}
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, `claude-guard - Command guardrail for Claude Code
+	fmt.Fprintf(os.Stderr, `cmdguard - Command guardrail for Claude Code
 
 Usage:
-  claude-guard exec [options] <command> [args...]
+  cmdguard exec [options] <command> [args...]
     Set up guarded environment and run <command>.
 
-  claude-guard list
+  cmdguard list
     Show allowed commands from policy.
 
-  claude-guard help
+  cmdguard help
     Show this help.
 
 Exec options:
@@ -109,9 +109,9 @@ Exec options:
   --policy <path>    Use a specific policy file instead of auto-detecting
 
 Examples:
-  claude-guard exec claude         # launch Claude Code in guarded env
-  claude-guard exec bash           # launch bash with only allowed commands
-  claude-guard exec --namespace bash  # same, with mount namespace isolation
+  cmdguard exec claude         # launch Claude Code in guarded env
+  cmdguard exec bash           # launch bash with only allowed commands
+  cmdguard exec --namespace bash  # same, with mount namespace isolation
 `)
 }
 
@@ -151,7 +151,7 @@ func runExecMode() {
 doneOpts:
 
 	if idx >= len(args) {
-		fatal("exec requires a command to run.\n\nUsage: claude-guard exec [options] <command> [args...]")
+		fatal("exec requires a command to run.\n\nUsage: cmdguard exec [options] <command> [args...]")
 	}
 
 	targetCmd := args[idx]
@@ -186,7 +186,7 @@ doneOpts:
 	if !keepTmpdir {
 		defer os.RemoveAll(tmpDir)
 	} else {
-		fmt.Fprintf(os.Stderr, "[claude-guard] tmpdir: %s\n", tmpDir)
+		fmt.Fprintf(os.Stderr, "[cmdguard] tmpdir: %s\n", tmpDir)
 	}
 
 	// Find target binary BEFORE any namespace shenanigans
@@ -224,7 +224,7 @@ func resolveGuardBin() string {
 //
 // Returns (tmpDir, binDir, error).
 func createGuardedBinDir(policy *Policy, guardBin string, policyPath string) (string, string, error) {
-	tmpDir, err := os.MkdirTemp("", "claude-guard-*")
+	tmpDir, err := os.MkdirTemp("", "cmdguard-*")
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create tmpdir: %v", err)
 	}
@@ -239,7 +239,7 @@ func createGuardedBinDir(policy *Policy, guardBin string, policyPath string) (st
 	for cmdName := range policy.Commands {
 		linkPath := filepath.Join(binDir, cmdName)
 		if err := os.Symlink(guardBin, linkPath); err != nil {
-			fmt.Fprintf(os.Stderr, "[claude-guard] warning: symlink %s: %v\n", cmdName, err)
+			fmt.Fprintf(os.Stderr, "[cmdguard] warning: symlink %s: %v\n", cmdName, err)
 		}
 	}
 
@@ -283,7 +283,7 @@ func execWithNamespace(realTarget string, targetCmd string, targetArgs []string,
 		}
 		dst := filepath.Join(origBinDir, cmdName)
 		if err := copyFile(realPath, dst); err != nil {
-			fmt.Fprintf(os.Stderr, "[claude-guard] warning: copy %s: %v\n", cmdName, err)
+			fmt.Fprintf(os.Stderr, "[cmdguard] warning: copy %s: %v\n", cmdName, err)
 			continue
 		}
 		os.Chmod(dst, 0755)
@@ -306,7 +306,7 @@ func execWithNamespace(realTarget string, targetCmd string, targetArgs []string,
 	os.Chmod(targetCopy, 0755)
 
 	// --- 3. Copy guard binary into binDir ---
-	guardCopy := filepath.Join(binDir, ".claude-guard-bin")
+	guardCopy := filepath.Join(binDir, ".cmdguard-bin")
 	if err := copyFile(guardBin, guardCopy); err != nil {
 		fatal("failed to copy guard binary: %v", err)
 	}
@@ -325,7 +325,7 @@ func execWithNamespace(realTarget string, targetCmd string, targetArgs []string,
 	}
 
 	if err := syscall.Mount("", "/", "", syscall.MS_PRIVATE|syscall.MS_REC, ""); err != nil {
-		fmt.Fprintf(os.Stderr, "[claude-guard] warning: MS_PRIVATE failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[cmdguard] warning: MS_PRIVATE failed: %v\n", err)
 	}
 
 	// Directories that must NOT be masked
@@ -350,7 +350,7 @@ func execWithNamespace(realTarget string, targetCmd string, targetArgs []string,
 			continue
 		}
 		if err := syscall.Mount(binDir, absDir, "", syscall.MS_BIND|syscall.MS_RDONLY, ""); err != nil {
-			fmt.Fprintf(os.Stderr, "[claude-guard] warning: bind-mount over %s: %v\n", absDir, err)
+			fmt.Fprintf(os.Stderr, "[cmdguard] warning: bind-mount over %s: %v\n", absDir, err)
 		}
 	}
 
@@ -723,6 +723,6 @@ func copyFile(src, dst string) error {
 }
 
 func fatal(format string, a ...interface{}) {
-	fmt.Fprintf(os.Stderr, "[claude-guard] "+format+"\n", a...)
+	fmt.Fprintf(os.Stderr, "[cmdguard] "+format+"\n", a...)
 	os.Exit(126)
 }

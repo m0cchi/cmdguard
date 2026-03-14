@@ -1,33 +1,33 @@
-# AppArmor profile for claude-guard
+# AppArmor profile for cmdguard
 #
-# Deploy to: /etc/apparmor.d/claude-guard  (on each K8s node)
-# Load with: apparmor_parser -r /etc/apparmor.d/claude-guard
+# Deploy to: /etc/apparmor.d/cmdguard  (on each K8s node)
+# Load with: apparmor_parser -r /etc/apparmor.d/cmdguard
 #
 # Two profiles are defined:
 #
-#   claude-guard          — the guard binary itself
-#   claude-guard-confined — child processes launched by "claude-guard exec"
+#   cmdguard          — the guard binary itself
+#   cmdguard-confined — child processes launched by "cmdguard exec"
 #                           (e.g. the claude-code process)
 #
 # How it works:
-#   1. User runs: claude-guard exec claude
-#   2. claude-guard sets up tmpdir with symlinks, then exec's claude
-#      → claude transitions to "claude-guard-confined" profile
+#   1. User runs: cmdguard exec claude
+#   2. cmdguard sets up tmpdir with symlinks, then exec's claude
+#      → claude transitions to "cmdguard-confined" profile
 #   3. Inside claude, any sub-command (e.g. git) resolves to
-#      /tmp/claude-guard-XXXX/bin/git (symlink → guard binary)
+#      /tmp/cmdguard-XXXX/bin/git (symlink → guard binary)
 #      AppArmor resolves the symlink target and transitions back
-#      to "claude-guard" profile for validation
-#   4. After policy check, claude-guard exec's the real binary (Ux)
+#      to "cmdguard" profile for validation
+#   4. After policy check, cmdguard exec's the real binary (Ux)
 #
 # Kubernetes usage:
 #   Pod annotation:
-#     container.apparmor.security.beta.kubernetes.io/<container>: localhost/claude-guard-confined
+#     container.apparmor.security.beta.kubernetes.io/<container>: localhost/cmdguard-confined
 #   (the "localhost/" prefix means the profile is loaded on the node)
 
 # ============================================================
-# claude-guard binary profile
+# cmdguard binary profile
 # ============================================================
-profile claude-guard /opt/claude-guard/claude-guard flags=(attach_disconnected) {
+profile cmdguard /opt/cmdguard/cmdguard flags=(attach_disconnected) {
   include <abstractions/base>
   include <abstractions/nameservice>
 
@@ -38,23 +38,23 @@ profile claude-guard /opt/claude-guard/claude-guard flags=(attach_disconnected) 
   /proc/@{pid}/exe r,
 
   # --- Policy files ---
-  /opt/claude-guard/claude-guard.yaml r,
-  /tmp/claude-guard-*/bin/claude-guard.yaml r,
+  /opt/cmdguard/cmdguard.yaml r,
+  /tmp/cmdguard-*/bin/cmdguard.yaml r,
 
   # --- Install dir ---
-  /opt/claude-guard/ r,
-  /opt/claude-guard/** r,
+  /opt/cmdguard/ r,
+  /opt/cmdguard/** r,
 
   # --- Tmpdir management (exec mode) ---
   # MkdirTemp, Mkdir, Symlink, WriteFile, RemoveAll
   /tmp/ rw,
-  /tmp/claude-guard-*/            rw,
-  /tmp/claude-guard-*/bin/        rw,
-  /tmp/claude-guard-*/bin/**      rwlk,
-  /tmp/claude-guard-*/origbin/    rw,
-  /tmp/claude-guard-*/origbin/**  rwx,
-  /tmp/claude-guard-*/.exec-target rwx,
-  /tmp/claude-guard-*/bin/.claude-guard-bin rwx,
+  /tmp/cmdguard-*/            rw,
+  /tmp/cmdguard-*/bin/        rw,
+  /tmp/cmdguard-*/bin/**      rwlk,
+  /tmp/cmdguard-*/origbin/    rw,
+  /tmp/cmdguard-*/origbin/**  rwx,
+  /tmp/cmdguard-*/.exec-target rwx,
+  /tmp/cmdguard-*/bin/.cmdguard-bin rwx,
 
   # --- Copy real binaries into origbin (exec --namespace) ---
   /usr/bin/*         r,
@@ -65,34 +65,34 @@ profile claude-guard /opt/claude-guard/claude-guard flags=(attach_disconnected) 
 
   # --- mount namespace (exec --namespace, needs CAP_SYS_ADMIN) ---
   capability sys_admin,
-  mount options=(rw, bind, ro) /tmp/claude-guard-*/bin/ -> /usr/bin/,
-  mount options=(rw, bind, ro) /tmp/claude-guard-*/bin/ -> /usr/local/bin/,
-  mount options=(rw, bind, ro) /tmp/claude-guard-*/bin/ -> /bin/,
-  mount options=(rw, bind, ro) /tmp/claude-guard-*/bin/ -> /usr/sbin/,
-  mount options=(rw, bind, ro) /tmp/claude-guard-*/bin/ -> /sbin/,
-  mount options=(rw, bind, ro) /tmp/claude-guard-*/bin/ -> /usr/local/sbin/,
+  mount options=(rw, bind, ro) /tmp/cmdguard-*/bin/ -> /usr/bin/,
+  mount options=(rw, bind, ro) /tmp/cmdguard-*/bin/ -> /usr/local/bin/,
+  mount options=(rw, bind, ro) /tmp/cmdguard-*/bin/ -> /bin/,
+  mount options=(rw, bind, ro) /tmp/cmdguard-*/bin/ -> /usr/sbin/,
+  mount options=(rw, bind, ro) /tmp/cmdguard-*/bin/ -> /sbin/,
+  mount options=(rw, bind, ro) /tmp/cmdguard-*/bin/ -> /usr/local/sbin/,
   mount options=(rw, private) -> /,
 
   # --- Execute real binaries AFTER policy validation ---
-  # Ux: run unconfined (policy has already been checked by claude-guard)
+  # Ux: run unconfined (policy has already been checked by cmdguard)
   /usr/bin/*             Ux,
   /usr/local/bin/*       Ux,
   /bin/*                 Ux,
   /usr/sbin/*            Ux,
   /sbin/*                Ux,
-  /tmp/claude-guard-*/origbin/* Ux,
-  /tmp/claude-guard-*/.exec-target Px -> claude-guard-confined,
+  /tmp/cmdguard-*/origbin/* Ux,
+  /tmp/cmdguard-*/.exec-target Px -> cmdguard-confined,
 
   # --- Launch target process under confined profile ---
   # Add more target binaries as needed.
-  /usr/local/bin/claude  Px -> claude-guard-confined,
-  /usr/bin/bash          Px -> claude-guard-confined,
-  /bin/bash              Px -> claude-guard-confined,
-  /usr/bin/sh            Px -> claude-guard-confined,
-  /bin/sh                Px -> claude-guard-confined,
-  /usr/bin/zsh           Px -> claude-guard-confined,
-  /usr/bin/fish          Px -> claude-guard-confined,
-  /usr/bin/node          Px -> claude-guard-confined,
+  /usr/local/bin/claude  Px -> cmdguard-confined,
+  /usr/bin/bash          Px -> cmdguard-confined,
+  /bin/bash              Px -> cmdguard-confined,
+  /usr/bin/sh            Px -> cmdguard-confined,
+  /bin/sh                Px -> cmdguard-confined,
+  /usr/bin/zsh           Px -> cmdguard-confined,
+  /usr/bin/fish          Px -> cmdguard-confined,
+  /usr/bin/node          Px -> cmdguard-confined,
 
   # --- General read access ---
   /etc/passwd  r,
@@ -112,11 +112,11 @@ profile claude-guard /opt/claude-guard/claude-guard flags=(attach_disconnected) 
 }
 
 # ============================================================
-# claude-guard-confined profile
-# Applied to processes launched by "claude-guard exec"
+# cmdguard-confined profile
+# Applied to processes launched by "cmdguard exec"
 # (e.g. claude-code itself)
 # ============================================================
-profile claude-guard-confined flags=(attach_disconnected) {
+profile cmdguard-confined flags=(attach_disconnected) {
   include <abstractions/base>
   include <abstractions/nameservice>
 
@@ -151,20 +151,20 @@ profile claude-guard-confined flags=(attach_disconnected) {
   signal send,
 
   # === EXECUTION RULES ===
-  # ONLY allow execution through claude-guard.
+  # ONLY allow execution through cmdguard.
   #
   # AppArmor resolves symlinks before matching exec rules, so:
-  #   /tmp/claude-guard-*/bin/git  (symlink)
-  #     → /opt/claude-guard/claude-guard (non-namespace mode)
-  #     → /tmp/claude-guard-*/bin/.claude-guard-bin (namespace mode copy)
+  #   /tmp/cmdguard-*/bin/git  (symlink)
+  #     → /opt/cmdguard/cmdguard (non-namespace mode)
+  #     → /tmp/cmdguard-*/bin/.cmdguard-bin (namespace mode copy)
   #
   # Both resolve targets are covered below.
 
   # Non-namespace mode: symlinks point directly to the installed binary
-  /opt/claude-guard/claude-guard                  Px -> claude-guard,
+  /opt/cmdguard/cmdguard                  Px -> cmdguard,
 
   # Namespace mode: symlinks point to a copy inside tmpdir
-  /tmp/claude-guard-*/bin/.claude-guard-bin       Px -> claude-guard,
+  /tmp/cmdguard-*/bin/.cmdguard-bin       Px -> cmdguard,
 
   # Deny everything else with exec permission
   deny /** x,

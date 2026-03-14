@@ -1,4 +1,4 @@
-module github.com/m0cchi/claude-guard
+module github.com/m0cchi/cmdguard
 
 go 1.24.4
 
