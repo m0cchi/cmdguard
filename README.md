@@ -268,13 +268,23 @@ aa-status | grep cmdguard
 DaemonSet でノード全体に配布する場合の例：
 
 ```yaml
-# apparmor-loader DaemonSet （抜粋）
+# 1. プロファイルを ConfigMap に格納
+# kubectl create configmap cmdguard-apparmor --from-file=apparmor/cmdguard
+
+# 2. apparmor-loader DaemonSet
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: apparmor-loader
+  namespace: kube-system
 spec:
+  selector:
+    matchLabels:
+      app: apparmor-loader
   template:
+    metadata:
+      labels:
+        app: apparmor-loader
     spec:
       initContainers:
       - name: install
@@ -288,6 +298,9 @@ spec:
           mountPath: /profiles
         - name: apparmor
           mountPath: /etc/apparmor.d
+      containers:
+      - name: pause
+        image: gcr.io/google-containers/pause
       volumes:
       - name: profiles
         configMap:
@@ -297,20 +310,37 @@ spec:
           path: /etc/apparmor.d
 ```
 
+> **注意**: Kubernetes はどのノードにどのプロファイルがロードされているかを把握しません。
+> プロファイルがロードされる前に Pod がスケジュールされないよう、DaemonSet の `initContainers` 完了後に
+> ノードへ `apparmor-loaded=true` ラベルを付与し、Pod 側で `nodeSelector` または `nodeAffinity` を指定することを推奨します。
+> 大規模クラスターでは [Security Profiles Operator](https://github.com/kubernetes-sigs/security-profiles-operator) の使用を検討してください。
+
 ### Pod への適用
+
+**Kubernetes v1.30 以降（推奨）：**
+
+```yaml
+spec:
+  containers:
+  - name: claude
+    command: ["/opt/cmdguard/cmdguard", "exec", "claude"]
+    securityContext:
+      appArmorProfile:
+        type: Localhost
+        localhostProfile: cmdguard-confined
+```
+
+**Kubernetes v1.30 未満（アノテーション方式、v1.30 で deprecated）：**
 
 ```yaml
 metadata:
   annotations:
-    # コンテナ名に対して confined プロファイルを適用
     container.apparmor.security.beta.kubernetes.io/claude: localhost/cmdguard-confined
 spec:
   containers:
   - name: claude
     command: ["/opt/cmdguard/cmdguard", "exec", "claude"]
 ```
-
-> **注意**: `localhost/` プレフィックスはノードにロード済みのプロファイルを指定します。
 
 ### カスタマイズ
 
