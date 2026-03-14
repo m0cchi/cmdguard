@@ -12,12 +12,12 @@ import (
 )
 
 // ============================================================
-// claude-guard: A command wrapper/guardrail for Claude Code
+// cmdguard: A command wrapper/guardrail for Claude Code
 //
 // Two modes of operation:
 //
 // 1. Symlink mode (original):
-//    Invoked as a symlink (e.g., /opt/claude-guard/bin/git)
+//    Invoked as a symlink (e.g., /opt/cmdguard/bin/git)
 //    Validates args against policy, then exec's the real binary.
 //
 // 2. Exec mode:

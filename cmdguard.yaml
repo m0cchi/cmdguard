@@ -1,9 +1,9 @@
-# claude-guard.yaml
-# Policy definition for claude-guard command wrapper
+# cmdguard.yaml
+# Policy definition for cmdguard command wrapper
 #
-# This file must be placed in the same directory as the claude-guard binary.
-# Symlinks like /opt/claude-guard/bin/git -> /opt/claude-guard/claude-guard
-# will read this file from /opt/claude-guard/claude-guard.yaml
+# This file must be placed in the same directory as the cmdguard binary.
+# Symlinks like /opt/cmdguard/bin/git -> /opt/cmdguard/cmdguard
+# will read this file from /opt/cmdguard/cmdguard.yaml
 #
 # Structure:
 #   commands:
